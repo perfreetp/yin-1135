@@ -290,13 +290,21 @@ const OnSiteVerificationPage: React.FC = () => {
   const handleCompleteTask = () => {
     if (!currentTask) return;
     
-    completeTask(currentTask.id);
+    const result = completeTask(currentTask.id);
+    const riskText = result.riskLevel === 'high' ? '高' : result.riskLevel === 'medium' ? '中' : '低';
+    const riskColor = result.riskLevel === 'high' ? '#ff4d4f' : result.riskLevel === 'medium' ? '#faad14' : '#52c41a';
     
-    const failCount = taskRecords.filter((r) => r.overallResult === 'fail').length;
-    const risk = currentTask.riskLevel || (failCount > 3 ? 'high' : failCount > 0 ? 'medium' : 'low');
-    const riskText = risk === 'high' ? '高' : risk === 'medium' ? '中' : '低';
-    
-    message.success(`核验任务完成，共发现 ${failCount} 个不合格包，整体风险等级：${riskText}`);
+    Modal.success({
+      title: '核验任务完成',
+      content: (
+        <div>
+          <p>共核验 <strong>{taskRecords.length}</strong> 个器械包</p>
+          <p>其中合格 <strong style={{ color: '#52c41a' }}>{taskRecords.length - result.failCount}</strong> 个，不合格 <strong style={{ color: '#ff4d4f' }}>{result.failCount}</strong> 个</p>
+          <p>整体风险等级：<strong style={{ color: riskColor }}>{riskText}风险</strong></p>
+        </div>
+      ),
+      icon: <SafetyOutlined style={{ color: riskColor }} />,
+    });
   };
 
   const groupedCheckItems = checkItemTemplates.map((cat) => ({
@@ -384,8 +392,7 @@ const OnSiteVerificationPage: React.FC = () => {
                 background: progressPercent === 100 ? '#52c41a' : '#1890ff',
                 borderRadius: 4,
                 transition: 'width 0.3s',
-              }}
-            />
+              </div>
             </div>
           </Col>
         </Row>

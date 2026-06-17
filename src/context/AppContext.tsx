@@ -181,13 +181,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return 'low';
   }, [auditRecords]);
 
-  const completeTask = useCallback((taskId: string) => {
+  const completeTask = useCallback((taskId: string): { riskLevel: 'high' | 'medium' | 'low'; failCount: number } => {
     const riskLevel = calculateTaskRiskLevel(taskId);
+    const taskRecords = auditRecords.filter(r => r.taskId === taskId);
+    const failCount = taskRecords.filter(r => r.overallResult === 'fail').length;
+    
     setAuditTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed', riskLevel } : t));
     if (currentTask?.id === taskId) {
       setCurrentTask(prev => prev ? { ...prev, status: 'completed', riskLevel } : null);
     }
-  }, [calculateTaskRiskLevel, currentTask]);
+    
+    return { riskLevel, failCount };
+  }, [calculateTaskRiskLevel, currentTask, auditRecords]);
 
   const getStorePackages = useCallback((storeId: string): InstrumentPackage[] => {
     return packages[storeId] || [];
