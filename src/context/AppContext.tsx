@@ -33,7 +33,7 @@ interface AppContextType extends AppState {
   addProblem: (problem: Problem) => void;
   updateProblem: (problem: Problem) => void;
   updateTaskStatus: (taskId: string, status: AuditTask['status']) => void;
-  completeTask: (taskId: string) => void;
+  completeTask: (taskId: string) => { riskLevel: 'high' | 'medium' | 'low'; failCount: number };
   ensureTaskSampled: (taskId: string) => AuditTask | null;
   getStorePackages: (storeId: string) => InstrumentPackage[];
   getTaskRecords: (taskId: string) => AuditRecord[];

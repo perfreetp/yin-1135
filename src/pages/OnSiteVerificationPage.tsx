@@ -17,6 +17,7 @@ import {
   Badge,
   Empty,
   Upload,
+  Alert,
 } from 'antd';
 import {
   QrcodeOutlined,
@@ -382,16 +383,18 @@ const OnSiteVerificationPage: React.FC = () => {
             </div>
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-              核验进度：{progressPercent}%
+                核验进度：{progressPercent}%
               </div>
               <div style={{ width: '100%', height: 8, background: '#f0f0f0', borderRadius: 4 }}>
-              <div
-              style={{
-                width: `${progressPercent}%`,
-                height: '100%',
-                background: progressPercent === 100 ? '#52c41a' : '#1890ff',
-                borderRadius: 4,
-                transition: 'width 0.3s',
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: '100%',
+                    background: progressPercent === 100 ? '#52c41a' : '#1890ff',
+                    borderRadius: 4,
+                    transition: 'width 0.3s',
+                  }}
+                />
               </div>
             </div>
           </Col>
