@@ -33,7 +33,17 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 const AuditTaskPage: React.FC = () => {
-  const { auditTasks, stores, generateAuditTask, setCurrentTask, getTaskRecords, getTaskProblems } = useApp();
+  const {
+    auditTasks,
+    stores,
+    generateAuditTask,
+    setCurrentTask,
+    getTaskRecords,
+    getTaskProblems,
+    ensureTaskSampled,
+    updateTaskStatus,
+    setActiveTab,
+  } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [selectedStore, setSelectedStore] = useState<string>('');
@@ -79,8 +89,19 @@ const AuditTaskPage: React.FC = () => {
   };
 
   const handleStartTask = (task: AuditTask) => {
-    setCurrentTask(task);
-    message.info(`已选择任务：${task.taskName}，请前往现场核验`);
+    const sampledTask = ensureTaskSampled(task.id);
+    if (!sampledTask) {
+      message.error('任务不存在或无法抽样');
+      return;
+    }
+
+    if (task.status === 'pending') {
+      updateTaskStatus(task.id, 'in_progress');
+    }
+
+    setCurrentTask(sampledTask);
+    setActiveTab('2');
+    message.success(`已进入核验：${sampledTask.taskName}，共抽取 ${sampledTask.sampledPackages.length} 个器械包`);
   };
 
   const columns = [

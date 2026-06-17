@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Layout, Tabs, Avatar, Badge } from 'antd';
 import {
   FileSearchOutlined,
@@ -9,6 +9,7 @@ import {
   BellOutlined,
   SafetyOutlined,
 } from '@ant-design/icons';
+import { useApp } from './context/AppContext';
 import AuditTaskPage from './pages/AuditTaskPage';
 import OnSiteVerificationPage from './pages/OnSiteVerificationPage';
 import RectificationPage from './pages/RectificationPage';
@@ -17,7 +18,11 @@ import StatisticsPage from './pages/StatisticsPage';
 const { Header, Content } = Layout;
 
 const App: React.FC = () => {
-  const [activeKey, setActiveKey] = useState('1');
+  const { activeTab, setActiveTab, problems } = useApp();
+
+  const pendingProblems = problems.filter(
+    (p) => p.status === 'pending' || p.status === 'rectifying'
+  ).length;
 
   const tabs = [
     {
@@ -46,6 +51,13 @@ const App: React.FC = () => {
         <span>
           <ToolOutlined className="tab-icon" />
           问题整改
+          {pendingProblems > 0 && (
+            <Badge
+              count={pendingProblems}
+              size="small"
+              style={{ marginLeft: 4 }}
+            />
+          )}
         </span>
       ),
       children: <RectificationPage />,
@@ -70,7 +82,7 @@ const App: React.FC = () => {
           <span>口腔感控稽核系统</span>
         </div>
         <div className="app-header-info">
-          <Badge count={5} size="small">
+          <Badge count={pendingProblems} size="small">
             <BellOutlined style={{ fontSize: 20, color: 'white', cursor: 'pointer' }} />
           </Badge>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -81,8 +93,8 @@ const App: React.FC = () => {
       </Header>
       <Content className="app-content">
         <Tabs
-          activeKey={activeKey}
-          onChange={setActiveKey}
+          activeKey={activeTab}
+          onChange={setActiveTab}
           items={tabs}
           size="large"
           style={{ background: 'white', borderRadius: 8, padding: '0 16px' }}

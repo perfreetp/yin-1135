@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
-  List,
   Input,
   Button,
   Tag,
   Checkbox,
   Space,
-  Divider,
   Row,
   Col,
   Descriptions,
@@ -16,31 +14,27 @@ import {
   Form,
   Select,
   DatePicker,
-  Upload,
-  Alert,
   Badge,
-  Steps,
-  Tabs,
   Empty,
+  Upload,
 } from 'antd';
 import {
   QrcodeOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CameraOutlined,
-  ExclamationCircleOutlined,
   SafetyOutlined,
-  FileProtectOutlined,
-  ToolOutlined,
   ClockCircleOutlined,
   EnvironmentOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
   SaveOutlined,
   PlusOutlined,
+  DeleteOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { useApp, checkItemTemplates } from '../context/AppContext';
-import { InstrumentPackage, AuditRecord, CheckItem, Problem } from '../types';
+import { AuditRecord, CheckItem, Problem } from '../types';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
@@ -51,11 +45,11 @@ const OnSiteVerificationPage: React.FC = () => {
     currentTask,
     auditRecords,
     packages,
-    setCurrentRecord,
     addAuditRecord,
     updateAuditRecord,
     addProblem,
     calculateRiskLevel,
+    completeTask,
     updateTaskStatus,
   } = useApp();
 
@@ -64,9 +58,17 @@ const OnSiteVerificationPage: React.FC = () => {
   const [checkItems, setCheckItems] = useState<CheckItem[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
+  const [currentRecordData, setCurrentRecordData] = useState<AuditRecord | null>(null);
+  
   const [isProblemModalOpen, setIsProblemModalOpen] = useState(false);
   const [problemForm] = Form.useForm();
-  const [currentRecordData, setCurrentRecordData] = useState<AuditRecord | null>(null);
+  const [pendingRecord, setPendingRecord] = useState<AuditRecord | null>(null);
+  const [pendingNextPackage, setPendingNextPackage] = useState<string | null>(null);
+  
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [previewPhoto, setPreviewPhoto] = useState('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const storePackages = currentTask ? packages[currentTask.storeId] || [] : [];
   const sampledPackages = currentTask
@@ -76,8 +78,6 @@ const OnSiteVerificationPage: React.FC = () => {
   const taskRecords = currentTask
     ? auditRecords.filter((r) => r.taskId === currentTask.id)
     : [];
-
-  const checkedPackageIds = taskRecords.map((r) => r.packageId);
 
   const selectedPackage = sampledPackages.find((p) => p.id === selectedPackageId);
 
@@ -92,7 +92,7 @@ const OnSiteVerificationPage: React.FC = () => {
       } else {
         const initialItems = checkItemTemplates.flatMap((cat) =>
           cat.items.map((item, idx) => ({
-            id: `ci_${cat.category}_${idx}`,
+            id: `ci_${cat.category}_${idx}_${Date.now()}`,
             name: item,
             category: cat.category,
             result: 'na' as const,
@@ -104,7 +104,7 @@ const OnSiteVerificationPage: React.FC = () => {
         setCurrentRecordData(null);
       }
     }
-  }, [selectedPackageId, taskRecords]);
+  }, [selectedPackageId]);
 
   const handleScan = () => {
     if (!scanInput.trim()) {
@@ -145,14 +145,57 @@ const OnSiteVerificationPage: React.FC = () => {
 
   const getRiskLevel = () => calculateRiskLevel(checkItems);
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const remainingSlots = 8 - photos.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+    
+    if (filesToProcess.length === 0) {
+      message.warning('最多只能上传8张照片');
+      return;
+    }
+
+    const loadPromises = filesToProcess.map((file) => {
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          resolve(event.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(loadPromises).then((newPhotos) => {
+      setPhotos(prev => [...prev, ...newPhotos]);
+      message.success(`已添加 ${newPhotos.length} 张照片`);
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeletePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePreviewPhoto = (photo: string) => {
+    setPreviewPhoto(photo);
+    setPhotoPreviewVisible(true);
+  };
+
   const handleSaveRecord = () => {
     if (!selectedPackage || !currentTask) return;
 
     const overallResult = getOverallResult();
     const riskLevel = getRiskLevel();
 
+    const recordId = currentRecordData?.id || `rec_${Date.now()}`;
+
     const record: AuditRecord = {
-      id: currentRecordData?.id || `rec_${Date.now()}`,
+      id: recordId,
       taskId: currentTask.id,
       packageId: selectedPackage.id,
       packageCode: selectedPackage.packageCode,
@@ -175,6 +218,14 @@ const OnSiteVerificationPage: React.FC = () => {
     message.success('核验记录已保存');
 
     if (overallResult === 'fail') {
+      setPendingRecord(record);
+      
+      const currentIndex = sampledPackages.findIndex((p) => p.id === selectedPackageId);
+      const nextPkg = currentIndex < sampledPackages.length - 1
+        ? sampledPackages[currentIndex + 1].id
+        : null;
+      setPendingNextPackage(nextPkg);
+
       setIsProblemModalOpen(true);
       problemForm.setFieldsValue({
         description: checkItems
@@ -182,25 +233,27 @@ const OnSiteVerificationPage: React.FC = () => {
           .map((item) => `${item.name}: ${item.description || '不合格'}`)
           .join('\n'),
         riskLevel,
+        category: '灭菌记录不完整',
+        deadline: dayjs().add(7, 'day'),
       });
-    }
-
-    const currentIndex = sampledPackages.findIndex((p) => p.id === selectedPackageId);
-    if (currentIndex < sampledPackages.length - 1) {
-      setSelectedPackageId(sampledPackages[currentIndex + 1].id);
+    } else {
+      const currentIndex = sampledPackages.findIndex((p) => p.id === selectedPackageId);
+      if (currentIndex < sampledPackages.length - 1) {
+        setSelectedPackageId(sampledPackages[currentIndex + 1].id);
+      }
     }
   };
 
   const handleCreateProblem = (values: any) => {
-    if (!selectedPackage || !currentTask) return;
+    if (!pendingRecord || !currentTask) return;
 
     const problem: Problem = {
       id: `prob_${Date.now()}`,
       taskId: currentTask.id,
-      recordId: currentRecordData?.id || `rec_${Date.now()}`,
+      recordId: pendingRecord.id,
       storeId: currentTask.storeId,
       storeName: currentTask.storeName,
-      packageCode: selectedPackage.packageCode,
+      packageCode: pendingRecord.packageCode,
       description: values.description,
       category: values.category,
       riskLevel: values.riskLevel,
@@ -211,19 +264,39 @@ const OnSiteVerificationPage: React.FC = () => {
     };
 
     addProblem(problem);
-    message.success('问题已记录，将生成整改任务');
+    message.success(`问题已记录，对应器械包：${pendingRecord.packageCode}`);
+
     setIsProblemModalOpen(false);
     problemForm.resetFields();
+    setPendingRecord(null);
+    
+    if (pendingNextPackage) {
+      setSelectedPackageId(pendingNextPackage);
+    }
+    setPendingNextPackage(null);
+  };
+
+  const handleSkipProblem = () => {
+    setIsProblemModalOpen(false);
+    problemForm.resetFields();
+    setPendingRecord(null);
+    
+    if (pendingNextPackage) {
+      setSelectedPackageId(pendingNextPackage);
+    }
+    setPendingNextPackage(null);
   };
 
   const handleCompleteTask = () => {
     if (!currentTask) return;
     
-    const failCount = taskRecords.filter((r) => r.overallResult === 'fail').length;
-    const overallRisk = failCount > 3 ? 'high' : failCount > 0 ? 'medium' : 'low';
+    completeTask(currentTask.id);
     
-    updateTaskStatus(currentTask.id, 'completed');
-    message.success(`核验任务完成，共发现 ${failCount} 个不合格包，整体风险等级：${overallRisk === 'high' ? '高' : overallRisk === 'medium' ? '中' : '低'}`);
+    const failCount = taskRecords.filter((r) => r.overallResult === 'fail').length;
+    const risk = currentTask.riskLevel || (failCount > 3 ? 'high' : failCount > 0 ? 'medium' : 'low');
+    const riskText = risk === 'high' ? '高' : risk === 'medium' ? '中' : '低';
+    
+    message.success(`核验任务完成，共发现 ${failCount} 个不合格包，整体风险等级：${riskText}`);
   };
 
   const groupedCheckItems = checkItemTemplates.map((cat) => ({
@@ -245,6 +318,10 @@ const OnSiteVerificationPage: React.FC = () => {
     );
   }
 
+  const progressPercent = sampledPackages.length > 0
+    ? Math.round((taskRecords.length / sampledPackages.length) * 100)
+    : 0;
+
   return (
     <div className="page-container">
       <div className="page-title">
@@ -262,6 +339,10 @@ const OnSiteVerificationPage: React.FC = () => {
             <div style={{ marginTop: 4 }}>
               <strong>门店：</strong>
               {currentTask.storeName}
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <strong>督导员：</strong>
+              {currentTask.auditor}
             </div>
           </Col>
           <Col span={12}>
@@ -291,6 +372,21 @@ const OnSiteVerificationPage: React.FC = () => {
                 <div className="label">未检</div>
               </div>
             </div>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+              核验进度：{progressPercent}%
+              </div>
+              <div style={{ width: '100%', height: 8, background: '#f0f0f0', borderRadius: 4 }}>
+              <div
+              style={{
+                width: `${progressPercent}%`,
+                height: '100%',
+                background: progressPercent === 100 ? '#52c41a' : '#1890ff',
+                borderRadius: 4,
+                transition: 'width 0.3s',
+              }}
+            />
+            </div>
           </Col>
         </Row>
       </div>
@@ -305,6 +401,7 @@ const OnSiteVerificationPage: React.FC = () => {
               onSearch={handleScan}
               enterButton={<QrcodeOutlined />}
               size="large"
+              onPressEnter={handleScan}
             />
           </div>
 
@@ -312,7 +409,7 @@ const OnSiteVerificationPage: React.FC = () => {
             抽检包列表 ({sampledPackages.length})
           </div>
 
-          <div>
+          <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
             {sampledPackages.map((pkg) => {
               const record = taskRecords.find((r) => r.packageId === pkg.id);
               const isChecked = !!record;
@@ -325,16 +422,20 @@ const OnSiteVerificationPage: React.FC = () => {
                   onClick={() => setSelectedPackageId(pkg.id)}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div className="package-code">{pkg.packageCode}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="package-code" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pkg.packageCode}</div>
                       <div className="package-name">{pkg.packageName}</div>
                     </div>
-                    {record && (
-                      <Badge
-                        status={record.overallResult === 'pass' ? 'success' : 'error'}
-                        text={record.overallResult === 'pass' ? '合格' : '不合格'}
-                      />
-                    )}
+                    <div style={{ flexShrink: 0, marginLeft: 8 }}>
+                      {record ? (
+                        <Badge
+                          status={record.overallResult === 'pass' ? 'success' : 'error'}
+                          text={record.overallResult === 'pass' ? '合' : '不'}
+                        />
+                      ) : (
+                        <Tag color="default" style={{ margin: 0 }}>未检</Tag>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -348,7 +449,7 @@ const OnSiteVerificationPage: React.FC = () => {
               <Card
                 size="small"
                 title={
-                  <Space>
+                  <Space wrap>
                     <SafetyOutlined style={{ color: '#1890ff' }} />
                     {selectedPackage.packageName}
                     <Tag color="blue">{selectedPackage.packageCode}</Tag>
@@ -365,11 +466,9 @@ const OnSiteVerificationPage: React.FC = () => {
                 }
                 style={{ marginBottom: 16 }}
                 extra={
-                  <Space>
-                    <Tag color={getRiskLevel() === 'high' ? 'red' : getRiskLevel() === 'medium' ? 'orange' : 'green'}>
-                      风险等级：{getRiskLevel() === 'high' ? '高' : getRiskLevel() === 'medium' ? '中' : '低'}
-                    </Tag>
-                  </Space>
+                  <Tag color={getRiskLevel() === 'high' ? 'red' : getRiskLevel() === 'medium' ? 'orange' : 'green'}>
+                    风险：{getRiskLevel() === 'high' ? '高' : getRiskLevel() === 'medium' ? '中' : '低'}
+                  </Tag>
                 }
               >
                 <Descriptions size="small" column={2}>
@@ -451,28 +550,59 @@ const OnSiteVerificationPage: React.FC = () => {
                 </Card>
               ))}
 
-              <Card size="small" title={<Space><CameraOutlined /> 照片证据</Space>} style={{ marginBottom: 12 }}>
+              <Card size="small" title={<Space><CameraOutlined /> 照片证据（{photos.length}/8）</Space>} style={{ marginBottom: 12 }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handlePhotoUpload}
+                />
                 <div className="photo-grid">
                   {photos.map((photo, idx) => (
                     <div
                       key={idx}
                       className="photo-item has-photo"
                       style={{
-                        background: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#1890ff',
+                        backgroundImage: `url(${photo})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        position: 'relative',
+                        cursor: 'pointer',
                       }}
+                      onClick={() => handlePreviewPhoto(photo)}
                     >
-                      <CameraOutlined style={{ fontSize: 24 }} />
-                      <span style={{ fontSize: 12, marginTop: 4 }}>照片 {idx + 1}</span>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          right: 4,
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.5)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePhoto(idx);
+                        }}
+                      >
+                        <DeleteOutlined />
+                      </div>
                     </div>
                   ))}
                   {photos.length < 8 && (
-                    <div className="photo-item" onClick={() => message.info('请连接摄像头或上传照片')}>
-                      <div style={{ textAlign: 'center' }}>
+                    <div
+                      className="photo-item"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div style={{ textAlign: 'center', color: '#8c8c8c' }}>
                         <PlusOutlined style={{ fontSize: 24 }} />
                         <div style={{ fontSize: 12, marginTop: 4 }}>添加照片</div>
                       </div>
@@ -521,10 +651,13 @@ const OnSiteVerificationPage: React.FC = () => {
                   <Button icon={<SaveOutlined />} onClick={handleSaveRecord}>
                     保存记录
                   </Button>
-                  {taskRecords.length === sampledPackages.length && (
+                  {taskRecords.length === sampledPackages.length && currentTask.status !== 'completed' && (
                     <Button type="primary" onClick={handleCompleteTask}>
                       完成核验
                     </Button>
+                  )}
+                  {currentTask.status === 'completed' && (
+                    <Tag color="success">已完成</Tag>
                   )}
                 </Space>
               </div>
@@ -536,12 +669,35 @@ const OnSiteVerificationPage: React.FC = () => {
       </div>
 
       <Modal
-        title="记录问题并生成整改"
+        title={
+          <Space>
+            <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+            记录问题并生成整改
+            {pendingRecord && (
+              <Tag color="blue">包号：{pendingRecord.packageCode}</Tag>
+            )}
+          </Space>
+        }
         open={isProblemModalOpen}
-        onCancel={() => setIsProblemModalOpen(false)}
+        onCancel={handleSkipProblem}
         footer={null}
         width={600}
+        maskClosable={false}
       >
+        <Alert
+          message="确认问题信息"
+          description={
+            <div>
+              <p>器械包：<strong>{pendingRecord?.packageCode}</strong></p>
+              <p>风险等级：<Tag color={pendingRecord?.riskLevel === 'high' ? 'red' : pendingRecord?.riskLevel === 'medium' ? 'orange' : 'green'}>
+                {pendingRecord?.riskLevel === 'high' ? '高风险' : pendingRecord?.riskLevel === 'medium' ? '中风险' : '低风险'}
+              </Tag></p>
+            </div>
+          }
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
         <Form form={problemForm} layout="vertical" onFinish={handleCreateProblem}>
           <Form.Item
             label="问题描述"
@@ -589,13 +745,29 @@ const OnSiteVerificationPage: React.FC = () => {
 
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-              <Button onClick={() => setIsProblemModalOpen(false)}>跳过</Button>
+              <Button onClick={handleSkipProblem}>跳过</Button>
               <Button type="primary" htmlType="submit">
                 生成整改
               </Button>
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        open={photoPreviewVisible}
+        footer={null}
+        onCancel={() => setPhotoPreviewVisible(false)}
+        width="auto"
+        style={{ top: 20 }}
+      >
+        {previewPhoto && (
+          <img
+            src={previewPhoto}
+            alt="预览"
+            style={{ maxWidth: '80vw', maxHeight: '80vh', display: 'block' }}
+          />
+        )}
       </Modal>
     </div>
   );

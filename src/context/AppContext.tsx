@@ -1,7 +1,15 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { AuditTask, AuditRecord, Problem, Store, InstrumentPackage, CommonProblem } from '../types';
 import { mockStores, mockPackages, mockAuditTasks, mockAuditRecords, mockProblems, mockCommonProblems, checkItemTemplates } from '../data/mockData';
 import dayjs from 'dayjs';
+
+const STORAGE_KEY = 'dental_audit_app_data';
+
+interface PersistedData {
+  auditTasks: AuditTask[];
+  auditRecords: AuditRecord[];
+  problems: Problem[];
+}
 
 interface AppState {
   stores: Store[];
@@ -12,34 +20,81 @@ interface AppState {
   commonProblems: CommonProblem[];
   currentTask: AuditTask | null;
   currentRecord: AuditRecord | null;
+  activeTab: string;
 }
 
 interface AppContextType extends AppState {
   setCurrentTask: (task: AuditTask | null) => void;
   setCurrentRecord: (record: AuditRecord | null) => void;
+  setActiveTab: (key: string) => void;
   generateAuditTask: (params: { storeId: string; taskName: string; planDate: string; packageCount: number; auditor: string }) => AuditTask;
   addAuditRecord: (record: AuditRecord) => void;
   updateAuditRecord: (record: AuditRecord) => void;
   addProblem: (problem: Problem) => void;
   updateProblem: (problem: Problem) => void;
   updateTaskStatus: (taskId: string, status: AuditTask['status']) => void;
+  completeTask: (taskId: string) => void;
+  ensureTaskSampled: (taskId: string) => AuditTask | null;
   getStorePackages: (storeId: string) => InstrumentPackage[];
   getTaskRecords: (taskId: string) => AuditRecord[];
   getTaskProblems: (taskId: string) => Problem[];
   calculateRiskLevel: (checkItems: AuditRecord['checkItems']) => 'high' | 'medium' | 'low';
+  calculateTaskRiskLevel: (taskId: string) => 'high' | 'medium' | 'low';
+  resetToMockData: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const loadFromStorage = (): PersistedData | null => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) {
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Failed to load data from localStorage:', e);
+  }
+  return null;
+};
+
+const saveToStorage = (data: PersistedData) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Failed to save data to localStorage:', e);
+  }
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [stores] = useState<Store[]>(mockStores);
   const [packages] = useState<Record<string, InstrumentPackage[]>>(mockPackages);
-  const [auditTasks, setAuditTasks] = useState<AuditTask[]>(mockAuditTasks);
-  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>(mockAuditRecords);
-  const [problems, setProblems] = useState<Problem[]>(mockProblems);
   const [commonProblems] = useState<CommonProblem[]>(mockCommonProblems);
   const [currentTask, setCurrentTask] = useState<AuditTask | null>(null);
   const [currentRecord, setCurrentRecord] = useState<AuditRecord | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('1');
+
+  const [auditTasks, setAuditTasks] = useState<AuditTask[]>(() => {
+    const persisted = loadFromStorage();
+    return persisted?.auditTasks || mockAuditTasks;
+  });
+
+  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>(() => {
+    const persisted = loadFromStorage();
+    return persisted?.auditRecords || mockAuditRecords;
+  });
+
+  const [problems, setProblems] = useState<Problem[]>(() => {
+    const persisted = loadFromStorage();
+    return persisted?.problems || mockProblems;
+  });
+
+  useEffect(() => {
+    saveToStorage({
+      auditTasks,
+      auditRecords,
+      problems,
+    });
+  }, [auditTasks, auditRecords, problems]);
 
   const generateAuditTask = useCallback((params: {
     storeId: string;
@@ -72,6 +127,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newTask;
   }, [stores, packages, auditTasks.length]);
 
+  const ensureTaskSampled = useCallback((taskId: string): AuditTask | null => {
+    const task = auditTasks.find(t => t.id === taskId);
+    if (!task) return null;
+    
+    if (task.sampledPackages && task.sampledPackages.length > 0) {
+      return task;
+    }
+    
+    const storePackages = packages[task.storeId] || [];
+    const shuffled = [...storePackages].sort(() => Math.random() - 0.5);
+    const sampled = shuffled.slice(0, task.packageCount);
+    const sampledIds = sampled.map(p => p.id);
+    
+    const updatedTask = { ...task, sampledPackages: sampledIds };
+    setAuditTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+    return updatedTask;
+  }, [auditTasks, packages]);
+
   const addAuditRecord = useCallback((record: AuditRecord) => {
     setAuditRecords(prev => [...prev, record]);
   }, []);
@@ -94,6 +167,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentTask(prev => prev ? { ...prev, status } : null);
     }
   }, [currentTask]);
+
+  const calculateTaskRiskLevel = useCallback((taskId: string): 'high' | 'medium' | 'low' => {
+    const taskRecords = auditRecords.filter(r => r.taskId === taskId);
+    if (taskRecords.length === 0) return 'low';
+    
+    const hasHighRisk = taskRecords.some(r => r.riskLevel === 'high');
+    const mediumCount = taskRecords.filter(r => r.riskLevel === 'medium').length;
+    const failCount = taskRecords.filter(r => r.overallResult === 'fail').length;
+    
+    if (hasHighRisk || failCount >= 3) return 'high';
+    if (mediumCount >= 2 || failCount >= 2) return 'medium';
+    return 'low';
+  }, [auditRecords]);
+
+  const completeTask = useCallback((taskId: string) => {
+    const riskLevel = calculateTaskRiskLevel(taskId);
+    setAuditTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed', riskLevel } : t));
+    if (currentTask?.id === taskId) {
+      setCurrentTask(prev => prev ? { ...prev, status: 'completed', riskLevel } : null);
+    }
+  }, [calculateTaskRiskLevel, currentTask]);
 
   const getStorePackages = useCallback((storeId: string): InstrumentPackage[] => {
     return packages[storeId] || [];
@@ -120,6 +214,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return 'low';
   }, []);
 
+  const resetToMockData = useCallback(() => {
+    setAuditTasks(mockAuditTasks);
+    setAuditRecords(mockAuditRecords);
+    setProblems(mockProblems);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   const value: AppContextType = {
     stores,
     packages,
@@ -129,18 +230,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     commonProblems,
     currentTask,
     currentRecord,
+    activeTab,
     setCurrentTask,
     setCurrentRecord,
+    setActiveTab,
     generateAuditTask,
     addAuditRecord,
     updateAuditRecord,
     addProblem,
     updateProblem,
     updateTaskStatus,
+    completeTask,
+    ensureTaskSampled,
     getStorePackages,
     getTaskRecords,
     getTaskProblems,
     calculateRiskLevel,
+    calculateTaskRiskLevel,
+    resetToMockData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
