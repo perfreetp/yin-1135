@@ -1,0 +1,383 @@
+import { Store, InstrumentPackage, AuditTask, AuditRecord, Problem, CommonProblem } from '../types';
+import dayjs from 'dayjs';
+
+export const mockStores: Store[] = [
+  { id: 's1', name: '北京朝阳门店', address: '北京市朝阳区建国路88号', manager: '张医生', phone: '13800138001', region: '华北区', status: 'active' },
+  { id: 's2', name: '北京海淀门店', address: '北京市海淀区中关村大街1号', manager: '李医生', phone: '13800138002', region: '华北区', status: 'active' },
+  { id: 's3', name: '上海浦东门店', address: '上海市浦东新区陆家嘴环路100号', manager: '王医生', phone: '13800138003', region: '华东区', status: 'active' },
+  { id: 's4', name: '上海徐汇门店', address: '上海市徐汇区漕溪北路500号', manager: '赵医生', phone: '13800138004', region: '华东区', status: 'active' },
+  { id: 's5', name: '广州天河门店', address: '广州市天河区天河路200号', manager: '陈医生', phone: '13800138005', region: '华南区', status: 'active' },
+  { id: 's6', name: '深圳南山门店', address: '深圳市南山区科技园路100号', manager: '刘医生', phone: '13800138006', region: '华南区', status: 'active' },
+];
+
+const packageTypes = [
+  { name: '基础治疗包', items: ['口镜', '镊子', '探针', '口杯', '纸巾'] },
+  { name: '补牙套装', items: ['口镜', '镊子', '探针', '充填器', '调拌刀', '粘固粉调刀'] },
+  { name: '根管治疗包', items: ['口镜', '镊子', '探针', '根管锉', '扩大针', '拔髓针', '测压针'] },
+  { name: '拔牙手术包', items: ['口镜', '镊子', '探针', '牙挺', '拔牙钳', '刮匙', '缝合针', '持针器'] },
+  { name: '洁牙套装', items: ['口镜', '镊子', '探针', '洁牙机工作尖', '抛光杯'] },
+  { name: '种植手术包', items: ['口镜', '镊子', '探针', '种植工具套装', '扭力扳手', '基台螺丝刀'] },
+];
+
+export const generateMockPackages = (storeId: string, count: number = 50): InstrumentPackage[] => {
+  const packages: InstrumentPackage[] = [];
+  const store = mockStores.find(s => s.id === storeId);
+  
+  for (let i = 0; i < count; i++) {
+    const typeIndex = i % packageTypes.length;
+    const type = packageTypes[typeIndex];
+    const dateOffset = Math.floor(Math.random() * 30);
+    const sterilizationDate = dayjs().subtract(dateOffset, 'day').format('YYYY-MM-DD HH:mm');
+    const expirationDate = dayjs().subtract(dateOffset, 'day').add(180, 'day').format('YYYY-MM-DD');
+    
+    packages.push({
+      id: `pkg_${storeId}_${i + 1}`,
+      packageCode: `${store?.name.substring(0, 2).toUpperCase() || 'ST'}${dayjs().subtract(dateOffset, 'day').format('YYYYMMDD')}${String(i + 1).padStart(3, '0')}`,
+      packageName: type.name,
+      type: type.name,
+      sterilizationBatch: `B${dayjs().subtract(dateOffset, 'day').format('YYYYMMDD')}${String(Math.floor(i / 5) + 1).padStart(2, '0')}`,
+      sterilizationDate,
+      expirationDate,
+      sterilizer: `灭菌器-${(i % 3) + 1}号`,
+      operator: ['护士小王', '护士小李', '护士小张'][i % 3],
+      checker: ['护士长陈', '质控员刘', '感控员王'][i % 3],
+      storageLocation: `无菌柜-${(i % 4) + 1}层`,
+      items: type.items.map((name, idx) => ({
+        name,
+        quantity: idx === 0 ? 2 : 1,
+        specification: ['标准', '大号', '小号'][idx % 3],
+      })),
+      storeId,
+    });
+  }
+  
+  return packages;
+};
+
+export const mockPackages: Record<string, InstrumentPackage[]> = {
+  s1: generateMockPackages('s1', 60),
+  s2: generateMockPackages('s2', 45),
+  s3: generateMockPackages('s3', 55),
+  s4: generateMockPackages('s4', 40),
+  s5: generateMockPackages('s5', 50),
+  s6: generateMockPackages('s6', 48),
+};
+
+export const mockAuditTasks: AuditTask[] = [
+  {
+    id: 'task_001',
+    taskCode: 'AUDIT-2024-0601-001',
+    taskName: '6月第1周例行抽检-北京朝阳',
+    storeId: 's1',
+    storeName: '北京朝阳门店',
+    planDate: '2024-06-03',
+    status: 'completed',
+    packageCount: 10,
+    sampledPackages: ['pkg_s1_1', 'pkg_s1_5', 'pkg_s1_10', 'pkg_s1_15', 'pkg_s1_20', 'pkg_s1_25', 'pkg_s1_30', 'pkg_s1_35', 'pkg_s1_40', 'pkg_s1_45'],
+    auditor: '感控督导-李主任',
+    createdAt: '2024-06-01 09:00:00',
+    riskLevel: 'medium',
+  },
+  {
+    id: 'task_002',
+    taskCode: 'AUDIT-2024-0601-002',
+    taskName: '6月第1周例行抽检-上海浦东',
+    storeId: 's3',
+    storeName: '上海浦东门店',
+    planDate: '2024-06-04',
+    status: 'completed',
+    packageCount: 10,
+    sampledPackages: ['pkg_s3_2', 'pkg_s3_7', 'pkg_s3_12', 'pkg_s3_17', 'pkg_s3_22', 'pkg_s3_27', 'pkg_s3_32', 'pkg_s3_37', 'pkg_s3_42', 'pkg_s3_47'],
+    auditor: '感控督导-王主任',
+    createdAt: '2024-06-01 10:00:00',
+    riskLevel: 'low',
+  },
+  {
+    id: 'task_003',
+    taskCode: 'AUDIT-2024-0601-003',
+    taskName: '6月第1周例行抽检-广州天河',
+    storeId: 's5',
+    storeName: '广州天河门店',
+    planDate: '2024-06-05',
+    status: 'in_progress',
+    packageCount: 10,
+    sampledPackages: ['pkg_s5_3', 'pkg_s5_8', 'pkg_s5_13', 'pkg_s5_18', 'pkg_s5_23', 'pkg_s5_28', 'pkg_s5_33', 'pkg_s5_38', 'pkg_s5_43', 'pkg_s5_48'],
+    auditor: '感控督导-张主任',
+    createdAt: '2024-06-01 11:00:00',
+  },
+  {
+    id: 'task_004',
+    taskCode: 'AUDIT-2024-0602-001',
+    taskName: '6月第2周专项抽检-深圳南山',
+    storeId: 's6',
+    storeName: '深圳南山门店',
+    planDate: '2024-06-10',
+    status: 'pending',
+    packageCount: 15,
+    sampledPackages: [],
+    auditor: '感控督导-刘主任',
+    createdAt: '2024-06-08 14:00:00',
+  },
+  {
+    id: 'task_005',
+    taskCode: 'AUDIT-2024-0602-002',
+    taskName: '6月第2周例行抽检-北京海淀',
+    storeId: 's2',
+    storeName: '北京海淀门店',
+    planDate: '2024-06-11',
+    status: 'pending',
+    packageCount: 10,
+    sampledPackages: [],
+    auditor: '感控督导-李主任',
+    createdAt: '2024-06-08 15:00:00',
+  },
+];
+
+const checkItemCategories = [
+  { category: '包装完整性', items: ['外包装无破损', '封口严密', '化学指示胶带变色正常', '包外标识清晰完整'] },
+  { category: '灭菌记录核对', items: ['灭菌批次可追溯', '灭菌参数符合要求', '灭菌员签名完整', '质检记录齐全'] },
+  { category: '包内配置核查', items: ['器械数量与清单一致', '器械规格正确', '器械清洁无污渍', '器械功能完好'] },
+  { category: '有效期与存放', items: ['在有效期内', '存放位置正确', '存放环境干燥清洁', '摆放整齐有序'] },
+];
+
+export const mockAuditRecords: AuditRecord[] = [
+  {
+    id: 'rec_001',
+    taskId: 'task_001',
+    packageId: 'pkg_s1_1',
+    packageCode: '北京20240520001',
+    packageName: '基础治疗包',
+    overallResult: 'pass',
+    riskLevel: 'low',
+    checkedAt: '2024-06-03 10:30:00',
+    checker: '感控督导-李主任',
+    photos: [],
+    checkItems: checkItemCategories.flatMap(cat => 
+      cat.items.map((item, idx) => ({
+        id: `ci_${cat.category}_${idx}`,
+        name: item,
+        category: cat.category,
+        result: 'pass' as const,
+      }))
+    ),
+  },
+  {
+    id: 'rec_002',
+    taskId: 'task_001',
+    packageId: 'pkg_s1_5',
+    packageCode: '北京20240522005',
+    packageName: '补牙套装',
+    overallResult: 'fail',
+    riskLevel: 'medium',
+    checkedAt: '2024-06-03 10:45:00',
+    checker: '感控督导-李主任',
+    photos: ['photo1.jpg', 'photo2.jpg'],
+    notes: '发现缺少质检签名，化学指示胶带变色不均匀',
+    checkItems: [
+      { id: 'ci_1', name: '外包装无破损', category: '包装完整性', result: 'pass' },
+      { id: 'ci_2', name: '封口严密', category: '包装完整性', result: 'pass' },
+      { id: 'ci_3', name: '化学指示胶带变色正常', category: '包装完整性', result: 'fail', description: '胶带部分区域变色不均匀' },
+      { id: 'ci_4', name: '包外标识清晰完整', category: '包装完整性', result: 'pass' },
+      { id: 'ci_5', name: '灭菌批次可追溯', category: '灭菌记录核对', result: 'pass' },
+      { id: 'ci_6', name: '灭菌参数符合要求', category: '灭菌记录核对', result: 'pass' },
+      { id: 'ci_7', name: '灭菌员签名完整', category: '灭菌记录核对', result: 'pass' },
+      { id: 'ci_8', name: '质检记录齐全', category: '灭菌记录核对', result: 'fail', description: '缺少质检人员签名' },
+      ...checkItemCategories[2].items.map((item, idx) => ({
+        id: `ci_9_${idx}`,
+        name: item,
+        category: '包内配置核查',
+        result: 'pass' as const,
+      })),
+      ...checkItemCategories[3].items.map((item, idx) => ({
+        id: `ci_10_${idx}`,
+        name: item,
+        category: '有效期与存放',
+        result: 'pass' as const,
+      })),
+    ],
+  },
+  {
+    id: 'rec_003',
+    taskId: 'task_001',
+    packageId: 'pkg_s1_10',
+    packageCode: '北京20240525010',
+    packageName: '根管治疗包',
+    overallResult: 'fail',
+    riskLevel: 'high',
+    checkedAt: '2024-06-03 11:00:00',
+    checker: '感控督导-李主任',
+    photos: ['photo3.jpg'],
+    notes: '器械数量不符，缺少2支根管锉；且接近有效期',
+    checkItems: [
+      ...checkItemCategories[0].items.map((item, idx) => ({
+        id: `ci_0_${idx}`,
+        name: item,
+        category: '包装完整性',
+        result: 'pass' as const,
+      })),
+      ...checkItemCategories[1].items.map((item, idx) => ({
+        id: `ci_1_${idx}`,
+        name: item,
+        category: '灭菌记录核对',
+        result: 'pass' as const,
+      })),
+      { id: 'ci_2_0', name: '器械数量与清单一致', category: '包内配置核查', result: 'fail', description: '缺少2支根管锉' },
+      { id: 'ci_2_1', name: '器械规格正确', category: '包内配置核查', result: 'pass' },
+      { id: 'ci_2_2', name: '器械清洁无污渍', category: '包内配置核查', result: 'pass' },
+      { id: 'ci_2_3', name: '器械功能完好', category: '包内配置核查', result: 'pass' },
+      { id: 'ci_3_0', name: '在有效期内', category: '有效期与存放', result: 'fail', description: '距离有效期仅剩3天' },
+      { id: 'ci_3_1', name: '存放位置正确', category: '有效期与存放', result: 'pass' },
+      { id: 'ci_3_2', name: '存放环境干燥清洁', category: '有效期与存放', result: 'pass' },
+      { id: 'ci_3_3', name: '摆放整齐有序', category: '有效期与存放', result: 'pass' },
+    ],
+  },
+];
+
+export const mockProblems: Problem[] = [
+  {
+    id: 'prob_001',
+    taskId: 'task_001',
+    recordId: 'rec_002',
+    storeId: 's1',
+    storeName: '北京朝阳门店',
+    packageCode: '北京20240522005',
+    description: '补牙套装化学指示胶带变色不均匀，且缺少质检人员签名',
+    category: '灭菌记录不完整',
+    riskLevel: 'medium',
+    status: 'rectifying',
+    rectificationDeadline: dayjs().add(7, 'day').format('YYYY-MM-DD'),
+    createdAt: '2024-06-03 11:30:00',
+    createdBy: '感控督导-李主任',
+    rectificationMeasures: '',
+  },
+  {
+    id: 'prob_002',
+    taskId: 'task_001',
+    recordId: 'rec_003',
+    storeId: 's1',
+    storeName: '北京朝阳门店',
+    packageCode: '北京20240525010',
+    description: '根管治疗包内缺少2支根管锉，且距离有效期仅剩3天',
+    category: '包内配置不符',
+    riskLevel: 'high',
+    status: 'pending',
+    rectificationDeadline: dayjs().add(3, 'day').format('YYYY-MM-DD'),
+    createdAt: '2024-06-03 11:45:00',
+    createdBy: '感控督导-李主任',
+  },
+  {
+    id: 'prob_003',
+    taskId: 'task_002',
+    recordId: 'rec_004',
+    storeId: 's3',
+    storeName: '上海浦东门店',
+    packageCode: '上海20240520003',
+    description: '拔牙手术包外包装有轻微破损，封口处有缝隙',
+    category: '包装不合格',
+    riskLevel: 'high',
+    status: 'closed',
+    rectificationDeadline: '2024-05-28',
+    rectificationMeasures: '已重新包装灭菌，对相关护士进行培训',
+    recheckResult: 'pass',
+    recheckAt: '2024-05-27 16:00:00',
+    rechecker: '感控督导-王主任',
+    createdAt: '2024-05-23 14:00:00',
+    createdBy: '感控督导-王主任',
+  },
+  {
+    id: 'prob_004',
+    taskId: 'task_002',
+    recordId: 'rec_005',
+    storeId: 's3',
+    storeName: '上海浦东门店',
+    packageCode: '上海20240522007',
+    description: '洁牙套装存放位置错误，放在非无菌区域',
+    category: '存放不规范',
+    riskLevel: 'medium',
+    status: 'rechecking',
+    rectificationDeadline: dayjs().add(5, 'day').format('YYYY-MM-DD'),
+    rectificationMeasures: '已移至正确的无菌柜存放，已对储物管理员进行培训',
+    createdAt: '2024-06-04 10:00:00',
+    createdBy: '感控督导-王主任',
+  },
+  {
+    id: 'prob_005',
+    taskId: 'task_001',
+    recordId: 'rec_006',
+    storeId: 's1',
+    storeName: '北京朝阳门店',
+    packageCode: '北京20240528020',
+    description: '种植手术包灭菌员签名为代签，非本人签名',
+    category: '签名不规范',
+    riskLevel: 'high',
+    status: 'rectifying',
+    rectificationDeadline: dayjs().add(5, 'day').format('YYYY-MM-DD'),
+    createdAt: '2024-06-03 14:00:00',
+    createdBy: '感控督导-李主任',
+  },
+];
+
+export const mockCommonProblems: CommonProblem[] = [
+  {
+    id: 'cp_001',
+    category: '包装类',
+    description: '包装袋封口不严，有缝隙',
+    riskLevel: 'high',
+    occurrenceCount: 28,
+    typicalScenarios: ['纸塑袋封口温度不够', '封口机压力不足', '封口处有皱褶'],
+    rectificationGuidance: '1. 检查封口机温度设置是否正确（建议180-200℃）\n2. 定期校准封口机\n3. 封口前检查包装袋是否平整',
+    preventionMeasures: ['每日班前检查封口机状态', '每周进行封口质量抽查', '加强操作人员培训'],
+  },
+  {
+    id: 'cp_002',
+    category: '记录类',
+    description: '灭菌记录签名不完整或代签',
+    riskLevel: 'high',
+    occurrenceCount: 35,
+    typicalScenarios: ['质检人员漏签', '灭菌员代签', '记录填写不及时'],
+    rectificationGuidance: '1. 严格执行谁操作谁签字原则\n2. 严禁代签行为\n3. 灭菌完成后立即记录',
+    preventionMeasures: ['建立签名授权制度', '定期检查记录完整性', '违规行为纳入绩效考核'],
+  },
+  {
+    id: 'cp_003',
+    category: '配置类',
+    description: '包内器械数量与清单不符',
+    riskLevel: 'medium',
+    occurrenceCount: 19,
+    typicalScenarios: ['打包时遗漏器械', '器械清单更新不及时', '多人配包交接不清'],
+    rectificationGuidance: '1. 严格按照配置清单配包\n2. 配包后双人核对\n3. 及时更新器械清单',
+    preventionMeasures: ['标准配置清单上墙', '配包后自检+互检', '定期抽查配置准确率'],
+  },
+  {
+    id: 'cp_004',
+    category: '存放类',
+    description: '无菌物品存放不规范',
+    riskLevel: 'medium',
+    occurrenceCount: 22,
+    typicalScenarios: ['存放位置错误', '堆放挤压', '与非无菌物品混放'],
+    rectificationGuidance: '1. 严格按区域存放\n2. 无菌柜标识清晰\n3. 物品摆放有序，先入先出',
+    preventionMeasures: ['存放区域明确标识', '定期整理无菌柜', '加强储物管理员培训'],
+  },
+  {
+    id: 'cp_005',
+    category: '效期类',
+    description: '临近或超过有效期未及时处理',
+    riskLevel: 'high',
+    occurrenceCount: 15,
+    typicalScenarios: ['效期检查不及时', '先入先出执行不到位', '库存过多'],
+    rectificationGuidance: '1. 立即停用过期物品\n2. 建立效期预警机制\n3. 严格执行先入先出原则',
+    preventionMeasures: ['每周检查效期', '设置近效期预警（如30天）', '合理控制库存'],
+  },
+  {
+    id: 'cp_006',
+    category: '清洁类',
+    description: '器械清洗不彻底，有残留污渍',
+    riskLevel: 'high',
+    occurrenceCount: 12,
+    typicalScenarios: ['手工清洗不彻底', '清洗机故障', '预处理不到位'],
+    rectificationGuidance: '1. 退回重洗\n2. 检查清洗设备运行状态\n3. 加强预处理',
+    preventionMeasures: ['使用后立即预处理', '定期检查清洗质量', '清洗设备定期维护'],
+  },
+];
+
+export const checkItemTemplates = checkItemCategories;
